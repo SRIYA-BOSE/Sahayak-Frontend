@@ -1,0 +1,43 @@
+{
+  "name": "SAHAYAK",
+  "short_name": "SAHAYAK",
+  "description": "Health and Safety Companion for Workers",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#1E40AF",
+  "orientation": "portrait",
+  "icons": [
+    {
+      "src": "/pwa-192x192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/pwa-512x512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ],
+  "categories": ["health", "productivity", "utilities"],
+  "screenshots": [],
+  "shortcuts": [
+    {
+      "name": "Emergency",
+      "short_name": "Emergency",
+      "description": "Quick access to emergency services",
+      "url": "/emergency",
+      "icons": [{ "src": "/pwa-192x192.png", "sizes": "192x192" }]
+    },
+    {
+      "name": "Voice Assistant",
+      "short_name": "Voice",
+      "description": "Voice assistant",
+      "url": "/voice-assistant",
+      "icons": [{ "src": "/pwa-192x192.png", "sizes": "192x192" }]
+    }
+  ]
+}
+
