@@ -36,7 +36,14 @@ import {
 export const Dashboard = () => {
   const navigate = useNavigate()
   const { t } = useTranslation()
-  const { vitalSigns, isConnected, serialMonitorLines, vitalSignsHistory, hasReceivedLiveData } =
+  const {
+    vitalSigns,
+    isConnected,
+    serialMonitorLines,
+    vitalSignsHistory,
+    hasReceivedLiveData,
+    hardwareEnabled,
+  } =
     useBluetooth()
   const alarm = useAlarmSound()
   const [location, setLocation] = useState({ lat: null, lon: null })
@@ -406,7 +413,11 @@ export const Dashboard = () => {
             <div className="mt-4 flex items-center gap-2 text-xs text-blue-50/90">
               <span className="inline-flex items-center gap-1 rounded-full bg-white/12 border border-white/15 px-2 py-1">
                 <Usb size={14} />
-                {isConnected ? t('Arduino Connected') : t('Arduino Disconnected')}
+                {isConnected
+                  ? t('Arduino Connected')
+                  : hardwareEnabled
+                    ? t('Arduino Disconnected')
+                    : t('Cloud Mode')}
               </span>
               <span className="ml-auto inline-flex items-center gap-1 rounded-full bg-white/12 border border-white/15 px-2 py-1">
                 {isNightMode ? t('Dark Mode') : t('Light Mode')}
@@ -430,8 +441,12 @@ export const Dashboard = () => {
             <div className="flex items-center gap-3">
               <CheckCircle className={successIconClass} size={24} />
               <div className="flex-1">
-                <p className={`font-semibold ${headingTextClass}`}>{t('Arduino Connected')}</p>
-                <p className={`text-sm ${mutedTextClass}`}>{t('Live sensor streaming active')}</p>
+                <p className={`font-semibold ${headingTextClass}`}>
+                  {t(hardwareEnabled ? 'Arduino Connected' : 'Cloud deployment active')}
+                </p>
+                <p className={`text-sm ${mutedTextClass}`}>
+                  {t(hardwareEnabled ? 'Live sensor streaming active' : 'HTTP API features are available')}
+                </p>
               </div>
               <Button
                 variant="outline"
@@ -448,11 +463,19 @@ export const Dashboard = () => {
             <div className="flex items-start gap-3">
               <Usb className={accentIconClass} size={22} />
               <div className="flex-1">
-                <p className={`font-semibold ${headingTextClass}`}>{t('Connect your Arduino sensor kit')}</p>
-                <p className={`text-sm mt-1 ${mutedTextClass}`}>{t('Open Device Management and connect the correct COM port to start streaming')}</p>
+                <p className={`font-semibold ${headingTextClass}`}>
+                  {t(hardwareEnabled ? 'Connect your Arduino sensor kit' : 'Cloud mode is running')}
+                </p>
+                <p className={`text-sm mt-1 ${mutedTextClass}`}>
+                  {t(
+                    hardwareEnabled
+                      ? 'Open Device Management and connect the correct COM port to start streaming'
+                      : 'Authentication, weather, jobs, schemes, and stored data features are available on Vercel.'
+                  )}
+                </p>
                 <div className="mt-3">
                   <Button variant="primary" size="md" onClick={() => navigate('/device')}>
-                    {t('Connect Arduino')}
+                    {t(hardwareEnabled ? 'Connect Arduino' : 'View device status')}
                   </Button>
                 </div>
               </div>
@@ -621,12 +644,22 @@ export const Dashboard = () => {
             <div className="flex items-center justify-between gap-3">
               <div>
                 <p className={`font-semibold ${headingTextClass}`}>
-                  {isConnected ? t('Fetching live Arduino values...') : t('Values will appear after Arduino connects')}
+                  {isConnected
+                    ? t('Fetching live Arduino values...')
+                    : t(
+                        hardwareEnabled
+                          ? 'Values will appear after Arduino connects'
+                          : 'Live hardware values are disabled in cloud mode'
+                      )}
                 </p>
                 <p className={`text-sm mt-1 ${mutedTextClass}`}>
                   {isConnected
                     ? t('Connected. Waiting for first sensor packet from Arduino Uno.')
-                    : t('Open Device Management and connect your Arduino Uno to begin monitoring.')}
+                    : t(
+                        hardwareEnabled
+                          ? 'Open Device Management and connect your Arduino Uno to begin monitoring.'
+                          : 'This deployment uses serverless APIs only. Hardware streaming is unavailable on Vercel.'
+                      )}
                 </p>
               </div>
               <div className={`h-3 w-3 rounded-full ${isConnected ? 'bg-amber-500 animate-pulse' : 'bg-gray-300'}`} />
@@ -639,7 +672,9 @@ export const Dashboard = () => {
             <div className="flex items-center justify-between gap-3 mb-4">
               <div className="flex items-center gap-2">
                 <Activity className={accentIconClass} size={20} />
-                <h3 className={`font-semibold ${headingTextClass}`}>{t('Construction Sensor Board')}</h3>
+                <h3 className={`font-semibold ${headingTextClass}`}>
+                  {t(hardwareEnabled ? 'Construction Sensor Board' : 'Monitoring Overview')}
+                </h3>
               </div>
               <span className={`text-xs px-3 py-1 rounded-full ${alerts.length > 0 ? 'bg-red-600 text-white' : 'bg-emerald-600 text-white'}`}>
                 {alerts.length > 0 ? t('DANGER') : t('SAFE')}
@@ -718,7 +753,7 @@ export const Dashboard = () => {
         {isConnected ? (
           <Card className="p-4 mb-6 bg-slate-950 text-slate-100 border border-slate-700 shadow-[0_18px_50px_-28px_rgba(15,23,42,0.95)]">
             <div className="flex items-center justify-between mb-3">
-              <h3 className="font-semibold">{t('Arduino Serial Monitor')}</h3>
+              <h3 className="font-semibold">{t(hardwareEnabled ? 'Arduino Serial Monitor' : 'Sensor Monitor')}</h3>
               <span className="text-xs px-2 py-1 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-400/20">
                 {t('LIVE')}
               </span>
@@ -732,7 +767,9 @@ export const Dashboard = () => {
                   </p>
                 ))
               ) : (
-                <p className="text-slate-400">{t('Waiting for serial data...')}</p>
+                <p className="text-slate-400">
+                  {t(hardwareEnabled ? 'Waiting for serial data...' : 'No live hardware feed in cloud mode.')}
+                </p>
               )}
             </div>
           </Card>

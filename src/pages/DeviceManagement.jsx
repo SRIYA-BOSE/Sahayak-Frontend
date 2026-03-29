@@ -18,6 +18,8 @@ export const DeviceManagement = () => {
     connectedPort,
     loadAvailablePorts,
     isConnecting,
+    hardwareEnabled,
+    cloudModeMessage,
   } = useBluetooth()
 
   const [calibrating, setCalibrating] = useState(false)
@@ -83,6 +85,13 @@ export const DeviceManagement = () => {
       <div className="relative z-10 mx-auto max-w-5xl px-4 py-6 sm:px-6 lg:px-8">
         <PageHeader title="Device Management" subtitle="Connect Arduino Uno and verify live sensor streaming" />
 
+        {!hardwareEnabled && (
+          <Card className="p-4 mb-6 bg-amber-50/90 backdrop-blur-xl border border-amber-200 shadow-[0_10px_30px_-20px_rgba(0,0,0,0.35)]">
+            <h3 className="font-semibold text-amber-900">Cloud deployment mode</h3>
+            <p className="mt-2 text-sm text-amber-800">{cloudModeMessage}</p>
+          </Card>
+        )}
+
         <Card className="p-4 mb-6 bg-white/70 backdrop-blur-xl border border-white/40 shadow-[0_10px_30px_-20px_rgba(0,0,0,0.35)]">
           <div className="flex items-center justify-between mb-4">
             <h3 className="font-semibold text-gray-900 flex items-center gap-2">
@@ -125,7 +134,7 @@ export const DeviceManagement = () => {
             )}
           </div>
 
-          {!isConnected && (
+          {!isConnected && hardwareEnabled && (
             <div className="mt-4 space-y-3">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">COM Port</label>
@@ -165,7 +174,7 @@ export const DeviceManagement = () => {
           )}
 
           <div className="mt-4 flex gap-2">
-            {!isConnected ? (
+            {!isConnected && hardwareEnabled ? (
               <Button
                 variant="primary"
                 size="md"
@@ -175,9 +184,13 @@ export const DeviceManagement = () => {
               >
                 {connecting || isConnecting ? 'Connecting...' : 'Connect Arduino Uno'}
               </Button>
-            ) : (
+            ) : isConnected ? (
               <Button variant="danger" size="md" className="flex-1" onClick={handleDisconnect}>
                 Disconnect
+              </Button>
+            ) : (
+              <Button variant="outline" size="md" className="flex-1" disabled>
+                Hardware unavailable on Vercel
               </Button>
             )}
           </div>
@@ -244,7 +257,9 @@ export const DeviceManagement = () => {
             </div>
             <div className="flex items-center justify-between">
               <span className="text-gray-600">Data Sync</span>
-              <span className="font-medium text-gray-900">Live via WebSocket</span>
+              <span className="font-medium text-gray-900">
+                {hardwareEnabled ? 'Live via WebSocket' : 'Cloud API only'}
+              </span>
             </div>
             <div className="flex items-center justify-between">
               <span className="text-gray-600">Last Sync</span>

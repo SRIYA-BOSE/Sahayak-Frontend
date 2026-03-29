@@ -4,6 +4,10 @@ import { saveHealthRecord } from '../lib/indexedDB'
 
 export const BluetoothContext = createContext({})
 
+const hardwareEnabled = import.meta.env.VITE_ENABLE_HARDWARE === 'true'
+const cloudModeMessage =
+  'Hardware streaming is disabled in this cloud deployment. Deploy the local hardware bridge separately to use Arduino features.'
+
 export const BluetoothProvider = ({ children }) => {
   const [device, setDevice] = useState(null)
   const [isConnected, setIsConnected] = useState(false)
@@ -231,6 +235,11 @@ export const BluetoothProvider = ({ children }) => {
 
   // Load available COM ports
   const loadAvailablePorts = async () => {
+    if (!hardwareEnabled) {
+      setAvailablePorts([])
+      return
+    }
+
     try {
       const result = await api.listArduinoPorts()
       if (result.success) {
@@ -243,6 +252,8 @@ export const BluetoothProvider = ({ children }) => {
 
   // Check connection status periodically
   useEffect(() => {
+    if (!hardwareEnabled) return undefined
+
     const checkStatus = async () => {
       try {
         const result = await api.getArduinoStatus()
@@ -281,6 +292,7 @@ export const BluetoothProvider = ({ children }) => {
 
   // Fast fallback sync: keeps dashboard smooth if WebSocket is delayed.
   useEffect(() => {
+    if (!hardwareEnabled) return undefined
     if (!isConnected) return undefined
 
     const syncCurrentData = async () => {
@@ -310,6 +322,8 @@ export const BluetoothProvider = ({ children }) => {
 
   // Connect WebSocket when connected
   useEffect(() => {
+    if (!hardwareEnabled) return undefined
+
     if (isConnected) {
       connectWebSocket()
     } else {
@@ -323,6 +337,11 @@ export const BluetoothProvider = ({ children }) => {
 
   // Request device connection (Arduino via COM port)
   const requestDevice = async (comPort = 'COM7', baudRate = 115200) => {
+    if (!hardwareEnabled) {
+      setError(cloudModeMessage)
+      return { success: false, error: cloudModeMessage }
+    }
+
     try {
       setIsConnecting(true)
       setError(null)
@@ -357,6 +376,15 @@ export const BluetoothProvider = ({ children }) => {
 
   // Disconnect device
   const disconnect = async () => {
+    if (!hardwareEnabled) {
+      setIsConnected(false)
+      setDevice(null)
+      setConnectedPort(null)
+      setBatteryLevel(null)
+      setError(null)
+      return
+    }
+
     try {
       disconnectWebSocket()
       await api.disconnectArduino()
@@ -390,6 +418,10 @@ export const BluetoothProvider = ({ children }) => {
 
   // Calibrate sensor (placeholder - can be implemented if Arduino supports it)
   const calibrateSensor = async () => {
+    if (!hardwareEnabled) {
+      return { success: false, error: cloudModeMessage }
+    }
+
     if (!isConnected) {
       return { success: false, error: 'Not connected' }
     }
@@ -413,6 +445,8 @@ export const BluetoothProvider = ({ children }) => {
     availablePorts,
     connectedPort,
     loadAvailablePorts,
+    hardwareEnabled,
+    cloudModeMessage,
   }
 
   return <BluetoothContext.Provider value={value}>{children}</BluetoothContext.Provider>
