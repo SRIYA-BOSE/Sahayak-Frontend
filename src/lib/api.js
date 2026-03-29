@@ -24,7 +24,7 @@ const resolveApiBaseUrl = () => {
     const sameOriginApi = `${window.location.protocol}//${window.location.host}/api`
     return sameOriginApi
   }
-  return 'http://localhost:5000/api'
+  return 'https://sahayak-backend.vercel.app/api'
 }
 
 const API_BASE_URL = resolveApiBaseUrl()
