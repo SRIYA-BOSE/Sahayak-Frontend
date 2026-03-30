@@ -1,4 +1,5 @@
 const AUTH_STORAGE_KEY = 'sahayak_auth_session'
+const DEPLOYED_BACKEND_URL = 'https://sahayak-backend.vercel.app/api'
 
 const resolveApiBaseUrl = () => {
   if (import.meta.env.VITE_API_URL) {
@@ -10,9 +11,14 @@ const resolveApiBaseUrl = () => {
           parsed.hostname === 'localhost' || parsed.hostname === '127.0.0.1'
         const runningOnLocalHost =
           window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
+        const runningOnVercel = window.location.hostname.includes('vercel.app')
 
         // If UI is opened from another device (phone on LAN), remap localhost API to current host.
         if (hostIsLocal && !runningOnLocalHost) {
+          // In deployed environments, always use the live backend instead of remapping to the frontend host.
+          if (runningOnVercel) {
+            return DEPLOYED_BACKEND_URL
+          }
           parsed.hostname = window.location.hostname
           return parsed.toString().replace(/\/$/, '')
         }
@@ -36,7 +42,7 @@ const resolveApiBaseUrl = () => {
       return sameOriginApi
     }
   }
-  return 'https://sahayak-backend.vercel.app/api'
+  return DEPLOYED_BACKEND_URL
 }
 
 const API_BASE_URL = resolveApiBaseUrl()
