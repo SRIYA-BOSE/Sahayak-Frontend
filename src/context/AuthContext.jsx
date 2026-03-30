@@ -1,8 +1,31 @@
 import { createContext, useContext, useEffect, useState, useCallback, useMemo } from 'react'
-import { supabase, isSupabaseConfigured } from '../lib/supabase'
 import { saveSetting, getSetting, saveOfflineData, getOfflineData } from '../lib/indexedDB'
+import { api } from '../lib/api'
 
 const AuthContext = createContext({})
+const AUTH_STORAGE_KEY = 'sahayak_auth_session'
+
+const readStoredSession = () => {
+  if (typeof window === 'undefined') return null
+
+  try {
+    const raw = window.localStorage.getItem(AUTH_STORAGE_KEY)
+    return raw ? JSON.parse(raw) : null
+  } catch {
+    return null
+  }
+}
+
+const writeStoredSession = (session) => {
+  if (typeof window === 'undefined') return
+
+  if (!session) {
+    window.localStorage.removeItem(AUTH_STORAGE_KEY)
+    return
+  }
+
+  window.localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(session))
+}
 
 export const useAuth = () => {
   const context = useContext(AuthContext)
@@ -22,55 +45,46 @@ export const AuthProvider = ({ children }) => {
   }, [language])
 
   useEffect(() => {
-    // Check for saved language preference
-    getSetting('language').then((lang) => {
-      if (lang) setLanguage(lang)
-    }).catch(console.error)
+    getSetting('language')
+      .then((lang) => {
+        if (lang) setLanguage(lang)
+      })
+      .catch(console.error)
 
-    // Check for local user session if Supabase is not configured
-    if (!isSupabaseConfigured()) {
-      getOfflineData('local_user').then((localUser) => {
-        if (localUser) {
-          setUser(localUser)
-        }
+    const restoreSession = async () => {
+      const storedSession = readStoredSession()
+
+      if (!storedSession?.token) {
+        const localUser = await getOfflineData('local_user').catch(() => null)
+        if (localUser) setUser(localUser)
         setLoading(false)
-      }).catch(() => setLoading(false))
-      return
-    }
+        return
+      }
 
-    // Get initial session with error handling
-    if (supabase) {
-      supabase.auth.getSession()
-        .then(({ data: { session } }) => {
-          setUser(session?.user ?? null)
-          setLoading(false)
-        })
-        .catch((error) => {
-          console.error('Supabase connection error:', error)
-          // Fallback to local auth
-          getOfflineData('local_user').then((localUser) => {
-            if (localUser) setUser(localUser)
-            setLoading(false)
-          }).catch(() => setLoading(false))
-        })
-
-      // Listen for auth changes with error handling
       try {
-        const {
-          data: { subscription },
-        } = supabase.auth.onAuthStateChange((_event, session) => {
-          setUser(session?.user ?? null)
-        })
-
-        return () => {
-          if (subscription) subscription.unsubscribe()
+        const result = await api.getCurrentUser()
+        if (result?.success && result.data?.user) {
+          const hydratedUser = {
+            ...result.data.user,
+            profile: result.data.profile || null,
+          }
+          setUser(hydratedUser)
+        } else {
+          writeStoredSession(null)
+          const localUser = await getOfflineData('local_user').catch(() => null)
+          if (localUser) setUser(localUser)
         }
       } catch (error) {
-        console.error('Error setting up auth listener:', error)
+        console.error('Auth restore failed:', error)
+        writeStoredSession(null)
+        const localUser = await getOfflineData('local_user').catch(() => null)
+        if (localUser) setUser(localUser)
+      } finally {
+        setLoading(false)
       }
-    } else {
-      setLoading(false)
     }
+
+    restoreSession()
   }, [])
 
   const signUp = useCallback(async (email, password, userData) => {
@@ -86,48 +100,34 @@ export const AuthProvider = ({ children }) => {
       return { data: { user: localUser }, error: null }
     }
 
-    // Always support simple local auth when Supabase is not configured
-    if (!isSupabaseConfigured() || !supabase) {
-      return createLocalUser()
-    }
-
     try {
-      const { data, error } = await supabase.auth.signUp({
-        email,
-        password,
-        options: {
-          data: userData,
-        },
-      })
-      
-      if (error) {
-        // On localhost or dev, fall back to local auth instead of blocking the user
-        if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
-          console.warn('Supabase signup failed, falling back to local auth:', error)
-          return createLocalUser()
+      const result = await api.signUp(email, password, userData || {})
+      if (!result?.success) {
+        return {
+          data: null,
+          error: { message: result?.error || 'Sign up failed' },
         }
-
-        // Check if it's a network/connection error
-        if (error.message?.includes('fetch') || error.message?.includes('network') || error.message?.includes('Failed to fetch')) {
-          return { 
-            data: null, 
-            error: { 
-              message: 'Cannot connect to authentication service. Please check your internet connection and ensure Supabase is configured.' 
-            } 
-          }
-        }
-        return { data, error }
       }
-      
-      return { data, error }
+
+      const session = result.data?.session
+      if (session?.access_token) {
+        writeStoredSession({
+          token: session.access_token,
+          user: result.data.user,
+        })
+      }
+
+      const nextUser = {
+        ...result.data.user,
+        profile: result.data.profile || null,
+      }
+      setUser(nextUser)
+      return { data: result.data, error: null }
     } catch (err) {
-      // Handle network or configuration errors - fallback to local auth in dev
       if (
-        err.message?.includes('fetch') || 
-        err.message?.includes('network') || 
-        err.name === 'TypeError' ||
-        window.location.hostname === 'localhost' ||
-        window.location.hostname === '127.0.0.1'
+        err.message?.includes('fetch') ||
+        err.message?.includes('network') ||
+        err.name === 'TypeError'
       ) {
         console.warn('Signup error, using local auth fallback:', err)
         return createLocalUser()
@@ -143,76 +143,56 @@ export const AuthProvider = ({ children }) => {
         setUser(localUser)
         return { data: { user: localUser }, error: null }
       }
-      return {
-        data: null,
-        error: { message: fallbackMessage },
-      }
-    }
-
-    // Use local auth if Supabase is not configured
-    if (!isSupabaseConfigured() || !supabase) {
-      return tryLocalUser('Invalid email or password. For local demo, please sign up first.')
+      return { data: null, error: { message: fallbackMessage } }
     }
 
     try {
-      const { data, error } = await supabase.auth.signInWithPassword({
-        email,
-        password,
-      })
-      
-      if (error) {
-        // On localhost/dev, prefer local user instead of blocking on Supabase errors
-        if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
-          console.warn('Supabase signin failed, attempting local auth:', error)
-          return tryLocalUser('Invalid email or password. For this demo, please sign up locally first.')
+      const result = await api.signIn(email, password)
+      if (!result?.success) {
+        return {
+          data: null,
+          error: { message: result?.error || 'Invalid email or password' },
         }
-
-        // Check if it's a network/connection error
-        if (error.message?.includes('fetch') || error.message?.includes('network') || error.message?.includes('Failed to fetch')) {
-          return tryLocalUser('Cannot connect to authentication service. Using local demo mode - please sign up first.')
-        }
-        return { data, error }
       }
-      
-      return { data, error }
+
+      const session = result.data?.session
+      if (session?.access_token) {
+        writeStoredSession({
+          token: session.access_token,
+          user: result.data.user,
+        })
+      }
+
+      const nextUser = {
+        ...result.data.user,
+        profile: result.data.profile || null,
+      }
+      setUser(nextUser)
+      return { data: result.data, error: null }
     } catch (err) {
-      // Handle network or configuration errors - fallback to local auth in dev
       if (
-        err.message?.includes('fetch') || 
-        err.message?.includes('network') || 
-        err.name === 'TypeError' ||
-        window.location.hostname === 'localhost' ||
-        window.location.hostname === '127.0.0.1'
+        err.message?.includes('fetch') ||
+        err.message?.includes('network') ||
+        err.name === 'TypeError'
       ) {
         console.warn('Signin error, attempting local auth fallback:', err)
-        return tryLocalUser('Failed to connect to authentication service. Using local demo mode - please sign up first.')
+        return tryLocalUser('Failed to connect to authentication service. Please sign up locally first.')
       }
       return { data: null, error: err }
     }
   }, [])
 
   const signOut = useCallback(async () => {
-    if (!isSupabaseConfigured() || !supabase) {
-      // Clear local user
-      await saveOfflineData('local_user', null)
-      setUser(null)
-      return { error: null }
+    try {
+      await api.signOut()
+    } catch {
+      // Ignore signout failures and clear local state anyway.
     }
 
-    try {
-      const { error } = await supabase.auth.signOut()
-      if (error) {
-        // Clear local user anyway
-        await saveOfflineData('local_user', null)
-        setUser(null)
-      }
-      return { error }
-    } catch (err) {
-      // Clear local user on error
-      await saveOfflineData('local_user', null)
-      setUser(null)
-      return { error: null }
-    }
+    writeStoredSession(null)
+    await saveOfflineData('local_user', null)
+    setUser(null)
+    return { error: null }
   }, [])
 
   const updateLanguage = useCallback(async (lang) => {
@@ -220,16 +200,18 @@ export const AuthProvider = ({ children }) => {
     await saveSetting('language', lang)
   }, [])
 
-  const value = useMemo(() => ({
-    user,
-    loading,
-    language,
-    setLanguage: updateLanguage,
-    signUp,
-    signIn,
-    signOut,
-  }), [user, loading, language, updateLanguage, signUp, signIn, signOut])
+  const value = useMemo(
+    () => ({
+      user,
+      loading,
+      language,
+      setLanguage: updateLanguage,
+      signUp,
+      signIn,
+      signOut,
+    }),
+    [user, loading, language, updateLanguage, signUp, signIn, signOut]
+  )
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
 }
-

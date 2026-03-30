@@ -1,3 +1,5 @@
+const AUTH_STORAGE_KEY = 'sahayak_auth_session'
+
 const resolveApiBaseUrl = () => {
   if (import.meta.env.VITE_API_URL) {
     const envUrl = import.meta.env.VITE_API_URL
@@ -21,21 +23,59 @@ const resolveApiBaseUrl = () => {
     return envUrl
   }
   if (typeof window !== 'undefined') {
+    const runningOnLocalHost =
+      window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
+
+    if (runningOnLocalHost) {
+      return 'http://localhost:5000/api'
+    }
+  }
+  if (typeof window !== 'undefined') {
     const sameOriginApi = `${window.location.protocol}//${window.location.host}/api`
-    return sameOriginApi
+    if (!window.location.hostname.includes('vercel.app')) {
+      return sameOriginApi
+    }
   }
   return 'https://sahayak-backend.vercel.app/api'
 }
 
 const API_BASE_URL = resolveApiBaseUrl()
 
-// Helper to get auth token from Supabase session
+const requestJson = async (path, options = {}) => {
+  try {
+    const response = await fetch(`${API_BASE_URL}${path}`, options)
+    const data = await response.json().catch(() => null)
+
+    if (!response.ok) {
+      return {
+        success: false,
+        error: data?.error || `Request failed with status ${response.status}`,
+        data: data?.data ?? null,
+      }
+    }
+
+    return data ?? { success: true }
+  } catch (error) {
+    return {
+      success: false,
+      error: error?.message || 'Network request failed',
+      data: null,
+    }
+  }
+}
+
+// Helper to get auth token from the stored backend session
 const getAuthToken = async () => {
-  const { supabase } = await import('./supabase')
-  if (!supabase) return null
-  
-  const { data: { session } } = await supabase.auth.getSession()
-  return session?.access_token || null
+  if (typeof window === 'undefined') return null
+
+  try {
+    const raw = window.localStorage.getItem(AUTH_STORAGE_KEY)
+    if (!raw) return null
+    const parsed = JSON.parse(raw)
+    return parsed?.token || null
+  } catch {
+    return null
+  }
 }
 
 // Helper to create headers with auth token
@@ -53,236 +93,208 @@ const createHeaders = async (includeAuth = true) => {
 export const api = {
   // Authentication
   signUp: async (email, password, userData) => {
-    const response = await fetch(`${API_BASE_URL}/auth/signup`, {
+    return requestJson('/auth/signup', {
       method: 'POST',
       headers: await createHeaders(false),
       body: JSON.stringify({ email, password, ...userData }),
     })
-    return response.json()
   },
 
   signIn: async (email, password) => {
-    const response = await fetch(`${API_BASE_URL}/auth/signin`, {
+    return requestJson('/auth/signin', {
       method: 'POST',
       headers: await createHeaders(false),
       body: JSON.stringify({ email, password }),
     })
-    return response.json()
   },
 
   signOut: async () => {
-    const response = await fetch(`${API_BASE_URL}/auth/signout`, {
+    return requestJson('/auth/signout', {
       method: 'POST',
       headers: await createHeaders(true),
     })
-    return response.json()
   },
 
   getCurrentUser: async () => {
-    const response = await fetch(`${API_BASE_URL}/auth/user`, {
+    return requestJson('/auth/user', {
       method: 'GET',
       headers: await createHeaders(true),
     })
-    return response.json()
   },
 
   updateProfile: async (profileData) => {
-    const response = await fetch(`${API_BASE_URL}/auth/profile`, {
+    return requestJson('/auth/profile', {
       method: 'PUT',
       headers: await createHeaders(true),
       body: JSON.stringify(profileData),
     })
-    return response.json()
   },
 
   // Health Records
   saveHealthRecord: async (data) => {
-    const response = await fetch(`${API_BASE_URL}/health/record`, {
+    return requestJson('/health/record', {
       method: 'POST',
       headers: await createHeaders(true),
       body: JSON.stringify(data),
     })
-    return response.json()
   },
 
   getHealthRecords: async (startDate, endDate) => {
     const params = new URLSearchParams()
     if (startDate) params.append('startDate', startDate)
     if (endDate) params.append('endDate', endDate)
-    const response = await fetch(`${API_BASE_URL}/health/records?${params}`, {
+    return requestJson(`/health/records?${params}`, {
       method: 'GET',
       headers: await createHeaders(true),
     })
-    return response.json()
   },
 
   // AI Recommendations
   getHealthRecommendations: async (vitalSigns) => {
-    const response = await fetch(`${API_BASE_URL}/ai/recommendations`, {
+    return requestJson('/ai/recommendations', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ vitalSigns }),
     })
-    return response.json()
   },
 
   // Voice Assistant
   getVoiceAssistantResponse: async (message, language = 'en') => {
-    const response = await fetch(`${API_BASE_URL}/ai/voice-assistant`, {
+    return requestJson('/ai/voice-assistant', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ message, language }),
     })
-    return response.json()
   },
 
   // Job Matching
   getJobSkillMatch: async (userSkills, jobDescription) => {
-    const response = await fetch(`${API_BASE_URL}/ai/job-match`, {
+    return requestJson('/ai/job-match', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ userSkills, jobDescription }),
     })
-    return response.json()
   },
 
   // Weather
   getWeather: async (lat, lon) => {
-    const response = await fetch(`${API_BASE_URL}/weather?lat=${lat}&lon=${lon}`)
-    return response.json()
+    return requestJson(`/weather?lat=${lat}&lon=${lon}`)
   },
 
   getWeatherForecast: async (lat, lon) => {
-    const response = await fetch(`${API_BASE_URL}/weather/forecast?lat=${lat}&lon=${lon}`)
-    return response.json()
+    return requestJson(`/weather/forecast?lat=${lat}&lon=${lon}`)
   },
 
   // Notifications
   getNotifications: async (limit = 50) => {
-    const response = await fetch(`${API_BASE_URL}/notifications?limit=${limit}`, {
+    return requestJson(`/notifications?limit=${limit}`, {
       method: 'GET',
       headers: await createHeaders(true),
     })
-    return response.json()
   },
 
   createNotification: async (notification) => {
-    const response = await fetch(`${API_BASE_URL}/notifications`, {
+    return requestJson('/notifications', {
       method: 'POST',
       headers: await createHeaders(true),
       body: JSON.stringify(notification),
     })
-    return response.json()
   },
 
   markNotificationRead: async (id) => {
-    const response = await fetch(`${API_BASE_URL}/notifications/${id}/read`, {
+    return requestJson(`/notifications/${id}/read`, {
       method: 'PATCH',
+      headers: await createHeaders(true),
     })
-    return response.json()
   },
 
   // Emergency Contacts
   getEmergencyContacts: async () => {
-    const response = await fetch(`${API_BASE_URL}/emergency-contacts`, {
+    return requestJson('/emergency-contacts', {
       method: 'GET',
       headers: await createHeaders(true),
     })
-    return response.json()
   },
 
   addEmergencyContact: async (contact) => {
-    const response = await fetch(`${API_BASE_URL}/emergency-contacts`, {
+    return requestJson('/emergency-contacts', {
       method: 'POST',
       headers: await createHeaders(true),
       body: JSON.stringify(contact),
     })
-    return response.json()
   },
 
   deleteEmergencyContact: async (id) => {
-    const response = await fetch(`${API_BASE_URL}/emergency-contacts/${id}`, {
+    return requestJson(`/emergency-contacts/${id}`, {
       method: 'DELETE',
       headers: await createHeaders(true),
     })
-    return response.json()
   },
 
   // Government Schemes
   getSchemes: async (category = 'all', search = '') => {
     const params = new URLSearchParams({ category, search })
-    const response = await fetch(`${API_BASE_URL}/schemes?${params}`)
-    return response.json()
+    return requestJson(`/schemes?${params}`)
   },
 
   // Jobs
   getJobs: async (type = 'all', search = '') => {
     const params = new URLSearchParams({ type, search })
-    const response = await fetch(`${API_BASE_URL}/jobs?${params}`)
-    return response.json()
+    return requestJson(`/jobs?${params}`)
   },
 
   // Education
   getEducationContent: async (category, language = 'en') => {
     const params = new URLSearchParams({ category, language })
-    const response = await fetch(`${API_BASE_URL}/education?${params}`)
-    return response.json()
+    return requestJson(`/education?${params}`)
   },
 
   // Device
   getDeviceData: async () => {
-    const response = await fetch(`${API_BASE_URL}/device`, {
+    return requestJson('/device', {
       method: 'GET',
       headers: await createHeaders(true),
     })
-    return response.json()
   },
 
   saveDeviceData: async (deviceData) => {
-    const response = await fetch(`${API_BASE_URL}/device`, {
+    return requestJson('/device', {
       method: 'POST',
       headers: await createHeaders(true),
       body: JSON.stringify(deviceData),
     })
-    return response.json()
   },
 
   // Arduino Serial Communication
   listArduinoPorts: async () => {
-    const response = await fetch(`${API_BASE_URL}/arduino/ports`)
-    return response.json()
+    return requestJson('/arduino/ports')
   },
 
   connectArduino: async (comPort = 'COM7', baudRate = 115200) => {
-    const response = await fetch(`${API_BASE_URL}/arduino/connect`, {
+    return requestJson('/arduino/connect', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ comPort, baudRate }),
     })
-    return response.json()
   },
 
   disconnectArduino: async () => {
-    const response = await fetch(`${API_BASE_URL}/arduino/disconnect`, {
+    return requestJson('/arduino/disconnect', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
     })
-    return response.json()
   },
 
   getArduinoStatus: async () => {
-    const response = await fetch(`${API_BASE_URL}/arduino/status`)
-    return response.json()
+    return requestJson('/arduino/status')
   },
 
   getArduinoData: async () => {
-    const response = await fetch(`${API_BASE_URL}/arduino/data`)
-    return response.json()
+    return requestJson('/arduino/data')
   },
 
   // Worker Dataset
   getWorkerDataset: async () => {
-    const response = await fetch(`${API_BASE_URL}/workers/dataset`)
-    return response.json()
+    return requestJson('/workers/dataset')
   },
 }

@@ -73,7 +73,10 @@ export const Notifications = () => {
   }
 
   const handleMarkAsRead = async (id) => {
-    await markNotificationAsRead(id)
+    const result = await api.markNotificationRead(id)
+    if (!result?.success) {
+      await markNotificationAsRead(id)
+    }
     loadNotifications()
   }
 

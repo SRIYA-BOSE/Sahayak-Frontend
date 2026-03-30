@@ -9,6 +9,13 @@ import { BottomNavigation } from '../components/BottomNavigation'
 import { User, Phone, Mail, Globe, Bluetooth, Battery, LogOut, Settings, Camera, Upload } from 'lucide-react'
 import { useTranslation } from '../hooks/useTranslation'
 import { saveOfflineData, getOfflineData } from '../lib/indexedDB'
+import { api } from '../lib/api'
+
+const defaultEmergencyContacts = [
+  { id: 'emergency-108', name: 'Emergency Services', phone: '108', relationship: 'Ambulance' },
+  { id: 'emergency-100', name: 'Police', phone: '100', relationship: 'Police' },
+  { id: 'emergency-101', name: 'Fire', phone: '101', relationship: 'Fire' },
+]
 
 export const Profile = () => {
   const navigate = useNavigate()
@@ -22,12 +29,21 @@ export const Profile = () => {
   const { t } = useTranslation()
 
   useEffect(() => {
-    // Load emergency contacts (would fetch from Supabase)
-    setEmergencyContacts([
-      { name: 'Emergency Services', number: '108', type: 'ambulance' },
-      { name: 'Police', number: '100', type: 'police' },
-      { name: 'Fire', number: '101', type: 'fire' },
-    ])
+    const loadEmergencyContacts = async () => {
+      try {
+        const result = await api.getEmergencyContacts()
+        if (result?.success && Array.isArray(result.data) && result.data.length > 0) {
+          setEmergencyContacts(result.data)
+          return
+        }
+      } catch (error) {
+        console.error('Failed to load emergency contacts:', error)
+      }
+
+      setEmergencyContacts(defaultEmergencyContacts)
+    }
+
+    loadEmergencyContacts()
     
     // Load profile photo from IndexedDB
     getOfflineData('profile_photo').then((photo) => {
@@ -195,15 +211,18 @@ export const Profile = () => {
           <div className="space-y-2">
             {emergencyContacts.map((contact, idx) => (
               <div
-                key={idx}
+                key={contact.id || idx}
                 className="flex items-center justify-between p-3 bg-gray-50 rounded-lg"
               >
                 <div>
                   <p className="font-medium text-gray-900">{t(contact.name)}</p>
-                  <p className="text-sm text-gray-600">{contact.number}</p>
+                  <p className="text-sm text-gray-600">{contact.phone}</p>
+                  {contact.relationship ? (
+                    <p className="text-xs text-gray-500">{t(contact.relationship)}</p>
+                  ) : null}
                 </div>
                 <a
-                  href={`tel:${contact.number}`}
+                  href={`tel:${contact.phone}`}
                   className="text-primary-blue font-medium"
                 >
                   {t('Call')}

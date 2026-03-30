@@ -1,8 +1,8 @@
-﻿import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { useBluetooth } from '../hooks/useBluetooth'
 import { useTranslation } from '../hooks/useTranslation'
 import { getHealthRecords } from '../lib/indexedDB'
-import { getHealthRecommendations } from '../lib/openai'
+import { api } from '../lib/api'
 import { PageHeader } from '../components/PageHeader'
 import { Card } from '../components/Card'
 import { Button } from '../components/Button'
@@ -42,7 +42,12 @@ export const HealthMonitoring = () => {
     setLoading(true)
     try {
       const { startDate, endDate } = getDateRange()
-      const records = await getHealthRecords(startDate.toISOString(), endDate.toISOString())
+      const remoteResult = await api.getHealthRecords(startDate.toISOString(), endDate.toISOString())
+      const records =
+        remoteResult?.success && Array.isArray(remoteResult.data) && remoteResult.data.length > 0
+          ? remoteResult.data
+          : await getHealthRecords(startDate.toISOString(), endDate.toISOString())
+
       const chartData = records
         .sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp))
         .map((record) => {
@@ -50,11 +55,12 @@ export const HealthMonitoring = () => {
           return {
             timestamp: record.timestamp,
             time: ts.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }),
-            heartRate: record.heartRate || 0,
+            heartRate: record.heartRate || record.heart_rate || 0,
             spo2: record.spo2 || 0,
             temperature: record.ambientTemperature || record.temperature || 0,
           }
         })
+
       setHealthData(chartData)
     } catch (error) {
       console.error('Error loading health data:', error)
@@ -73,9 +79,11 @@ export const HealthMonitoring = () => {
 
   const fetchRecommendations = useCallback(async () => {
     try {
-      const result = await getHealthRecommendations(vitalSigns)
-      setRecommendations(result.recommendations || [])
-      setRiskLevel(result.riskLevel || 'normal')
+      const result = await api.getHealthRecommendations(vitalSigns)
+      if (result?.success && result.data) {
+        setRecommendations(result.data.recommendations || [])
+        setRiskLevel(result.data.riskLevel || 'normal')
+      }
     } catch (error) {
       console.error('Error fetching recommendations:', error)
     }
@@ -183,7 +191,7 @@ export const HealthMonitoring = () => {
           </Card>
         )}
 
-        {isConnected && riskLevel !== 'normal' && (
+        {isConnected && riskLevel !== 'normal' ? (
           <Card className={`p-4 mb-6 ${getRiskColor(riskLevel)}`}>
             <div className="flex items-center gap-2">
               <AlertCircle size={20} />
@@ -197,7 +205,7 @@ export const HealthMonitoring = () => {
               </div>
             </div>
           </Card>
-        )}
+        ) : null}
 
         {!isConnected || !hasReceivedLiveData ? (
           <Card className="p-8 text-center">
@@ -258,7 +266,7 @@ export const HealthMonitoring = () => {
           </Card>
         )}
 
-        {isConnected && recommendations && recommendations.length > 0 && (
+        {isConnected && recommendations && recommendations.length > 0 ? (
           <Card className="p-4">
             <h3 className="font-semibold text-gray-900 mb-3">{t('AI Recommendations')}</h3>
             <ul className="space-y-2">
@@ -270,10 +278,9 @@ export const HealthMonitoring = () => {
               ))}
             </ul>
           </Card>
-        )}
+        ) : null}
       </div>
       <BottomNavigation />
     </div>
   )
 }
-
