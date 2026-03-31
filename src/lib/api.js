@@ -1,73 +1,120 @@
 const AUTH_STORAGE_KEY = 'sahayak_auth_session'
 const DEPLOYED_BACKEND_URL = 'https://sahayak-backend.vercel.app/api'
 
-const resolveApiBaseUrl = () => {
-  if (import.meta.env.VITE_API_URL) {
-    const envUrl = import.meta.env.VITE_API_URL
-    if (typeof window !== 'undefined') {
-      try {
-        const parsed = new URL(envUrl)
-        const hostIsLocal =
-          parsed.hostname === 'localhost' || parsed.hostname === '127.0.0.1'
-        const runningOnLocalHost =
-          window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
-        const runningOnVercel = window.location.hostname.includes('vercel.app')
+const trimTrailingSlash = (value = '') => String(value).replace(/\/$/, '')
 
-        // If UI is opened from another device (phone on LAN), remap localhost API to current host.
-        if (hostIsLocal && !runningOnLocalHost) {
-          // In deployed environments, always use the live backend instead of remapping to the frontend host.
-          if (runningOnVercel) {
-            return DEPLOYED_BACKEND_URL
-          }
-          parsed.hostname = window.location.hostname
-          return parsed.toString().replace(/\/$/, '')
-        }
-      } catch {
-        // ignore invalid env URL and use raw value
-      }
-    }
-    return envUrl
-  }
-  if (typeof window !== 'undefined') {
-    const runningOnLocalHost =
-      window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
+const isLocalHostname = (hostname = '') => hostname === 'localhost' || hostname === '127.0.0.1'
 
-    if (runningOnLocalHost) {
-      return 'http://localhost:5000/api'
-    }
-  }
-  if (typeof window !== 'undefined') {
-    const sameOriginApi = `${window.location.protocol}//${window.location.host}/api`
-    if (!window.location.hostname.includes('vercel.app')) {
-      return sameOriginApi
-    }
-  }
-  return DEPLOYED_BACKEND_URL
+const getSameOriginApiUrl = () => {
+  if (typeof window === 'undefined') return null
+  return `${window.location.protocol}//${window.location.host}/api`
 }
 
-const API_BASE_URL = resolveApiBaseUrl()
+const getEnvApiUrl = () => {
+  const envUrl = import.meta.env.VITE_API_URL
+  if (!envUrl) return null
 
-const requestJson = async (path, options = {}) => {
-  try {
-    const response = await fetch(`${API_BASE_URL}${path}`, options)
-    const data = await response.json().catch(() => null)
+  if (typeof window !== 'undefined') {
+    try {
+      const parsed = new URL(envUrl)
+      const hostIsLocal = isLocalHostname(parsed.hostname)
+      const runningOnLocalHost = isLocalHostname(window.location.hostname)
 
-    if (!response.ok) {
-      return {
-        success: false,
-        error: data?.error || `Request failed with status ${response.status}`,
-        data: data?.data ?? null,
+      // If UI is opened from another device on the same LAN, remap localhost API to that host.
+      if (hostIsLocal && !runningOnLocalHost) {
+        if (window.location.hostname.includes('vercel.app')) {
+          return DEPLOYED_BACKEND_URL
+        }
+
+        parsed.hostname = window.location.hostname
+        return trimTrailingSlash(parsed.toString())
       }
-    }
-
-    return data ?? { success: true }
-  } catch (error) {
-    return {
-      success: false,
-      error: error?.message || 'Network request failed',
-      data: null,
+    } catch {
+      // ignore invalid env URL and use raw value
     }
   }
+
+  return trimTrailingSlash(envUrl)
+}
+
+const getApiBaseCandidates = () => {
+  const candidates = []
+  const addCandidate = (value) => {
+    if (!value) return
+    const normalized = trimTrailingSlash(value)
+    if (normalized && !candidates.includes(normalized)) {
+      candidates.push(normalized)
+    }
+  }
+
+  const envUrl = getEnvApiUrl()
+  const sameOriginApi = getSameOriginApiUrl()
+
+  if (typeof window !== 'undefined' && isLocalHostname(window.location.hostname)) {
+    addCandidate(envUrl || 'http://localhost:5000/api')
+    addCandidate(sameOriginApi)
+    addCandidate(DEPLOYED_BACKEND_URL)
+    return candidates
+  }
+
+  // In deployed environments, try same-origin first so monorepo/root Vercel deployments work
+  // without needing a separate hardcoded backend domain.
+  addCandidate(sameOriginApi)
+  addCandidate(envUrl)
+  addCandidate(DEPLOYED_BACKEND_URL)
+
+  return candidates
+}
+
+const API_BASE_CANDIDATES = getApiBaseCandidates()
+
+const requestJson = async (path, options = {}) => {
+  let lastFailure = {
+    success: false,
+    error: 'Network request failed',
+    data: null,
+  }
+
+  for (const baseUrl of API_BASE_CANDIDATES) {
+    try {
+      const response = await fetch(`${baseUrl}${path}`, options)
+      const data = await response.json().catch(() => null)
+
+      if (!response.ok) {
+        const isRetryableMissingRoute = response.status === 404 && API_BASE_CANDIDATES.length > 1
+
+        lastFailure = {
+          success: false,
+          error: data?.error || `Request failed with status ${response.status}`,
+          data: data?.data ?? null,
+        }
+
+        if (isRetryableMissingRoute) {
+          continue
+        }
+
+        return lastFailure
+      }
+
+      return data ?? { success: true }
+    } catch (error) {
+      lastFailure = {
+        success: false,
+        error:
+          error?.message ||
+          'Network request failed. Check that the deployed API URL is reachable and CORS is enabled.',
+        data: null,
+      }
+    }
+  }
+
+  try {
+    console.error('All API base URL candidates failed for path:', path, API_BASE_CANDIDATES)
+  } catch {
+    // ignore logging issues in restricted environments
+  }
+
+  return lastFailure
 }
 
 // Helper to get auth token from the stored backend session
