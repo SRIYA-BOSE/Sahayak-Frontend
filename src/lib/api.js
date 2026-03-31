@@ -57,10 +57,10 @@ const getApiBaseCandidates = () => {
     return candidates
   }
 
-  // In deployed environments, try same-origin first so monorepo/root Vercel deployments work
-  // without needing a separate hardcoded backend domain.
-  addCandidate(sameOriginApi)
+  // In deployed environments, prefer the explicit backend first.
+  // The frontend Vercel app may not expose auth/api routes at its own /api path.
   addCandidate(envUrl)
+  addCandidate(sameOriginApi)
   addCandidate(DEPLOYED_BACKEND_URL)
 
   return candidates
